@@ -1,123 +1,195 @@
-//
-// boltdbweb is a webserver base GUI for interacting with BoltDB databases.
-//
-// For authorship see https://github.com/evnix/boltdbweb
-// MIT license is included in repository
-//
-package main
+package boltbrowserweb
 
 import (
-	"github.com/evnix/boltdbweb/web"
-	"github.com/gin-gonic/gin"
-)
-
-import (
-	"flag"
+	"bytes"
 	"fmt"
-	"os"
-	"path"
-	"time"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/boltdb/bolt"
+	"github.com/gin-gonic/gin"
+	"github.com/gobuffalo/packr"
 )
 
-const version = "v0.0.0"
+type BoltDBUI struct {
+	db     *bolt.DB
+	Assets packr.Box
+}
 
-var (
-	showHelp   bool
-	db         *bolt.DB
-	dbName     string
-	port       string
-	staticPath string
-)
+func New(db *bolt.DB) (BoltDBUI, error) {
+	b := BoltDBUI{db: db}
+	b.Assets = packr.NewBox("./Assets")
+	return b, nil
+}
 
-func usage(appName, version string) {
-	fmt.Printf("Usage: %s [OPTIONS] [DB_NAME]", appName)
-	fmt.Printf("\nOPTIONS:\n\n")
-	flag.VisitAll(func(f *flag.Flag) {
-		if len(f.Name) > 1 {
-			fmt.Printf("    -%s, -%s\t%s\n", f.Name[0:1], f.Name, f.Usage)
+func (b BoltDBUI) Index(c *gin.Context) {
+	c.Redirect(301, "/web/html/layout.html")
+}
+
+func (b BoltDBUI) CreateBucket(c *gin.Context) {
+
+	if c.PostForm("bucket") == "" {
+		c.String(200, "no bucket name | n")
+	}
+
+	b.db.Update(func(tx *bolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists([]byte(c.PostForm("bucket")))
+		b = b
+		if err != nil {
+			return fmt.Errorf("create bucket: %s", err)
 		}
+		return nil
 	})
-	fmt.Printf("\n\nVersion %s\n", version)
+	c.String(200, "ok")
+
 }
 
-func init() {
-	// Read the static path from the environment if set.
-	dbName = os.Getenv("BOLTDBWEB_DB_NAME")
-	port = os.Getenv("BOLTDBWEB_PORT")
-	staticPath = os.Getenv("BOLTDBWEB_STATIC_PATH")
-	// Use default values if environment not set.
-	if staticPath == "" {
-		staticPath = "."
+func (b BoltDBUI) DeleteBucket(c *gin.Context) {
+
+	if c.PostForm("bucket") == "" {
+		c.String(200, "no bucket name | n")
 	}
-	if port == "" {
-		port = "8080"
-	}
-	// Setup for command line processing
-	flag.BoolVar(&showHelp, "h", false, "display help")
-	flag.BoolVar(&showHelp, "help", false, "display help")
-	flag.StringVar(&dbName, "d", dbName, "Name of the database")
-	flag.StringVar(&dbName, "db-name", dbName, "Name of the database")
-	flag.StringVar(&port, "p", port, "Port for the web-ui")
-	flag.StringVar(&port, "port", port, "Port for the web-ui")
-	flag.StringVar(&staticPath, "s", staticPath, "Path for the static content")
-	flag.StringVar(&staticPath, "static-path", staticPath, "Path for the static content")
+
+	b.db.Update(func(tx *bolt.Tx) error {
+		err := tx.DeleteBucket([]byte(c.PostForm("bucket")))
+		if err != nil {
+			c.String(200, "error no such bucket | n")
+			return fmt.Errorf("bucket: %s", err)
+		}
+		return nil
+	})
+	c.String(200, "ok")
 }
 
-func main() {
-	appName := path.Base(os.Args[0])
-	flag.Parse()
-	args := flag.Args()
+func (b BoltDBUI) DeleteKey(c *gin.Context) {
 
-	if showHelp == true {
-		usage(appName, version)
-		os.Exit(0)
+	if c.PostForm("bucket") == "" || c.PostForm("key") == "" {
+		c.String(200, "no bucket name or key | n")
 	}
 
-	// If non-flag options are included assume bolt db is specified.
-	if len(args) > 0 {
-		dbName = args[0]
+	b.db.Update(func(tx *bolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists([]byte(c.PostForm("bucket")))
+		if err != nil {
+			c.String(200, "error no such bucket | n")
+			return fmt.Errorf("bucket: %s", err)
+		}
+		err = b.Delete([]byte(c.PostForm("key")))
+		if err != nil {
+			c.String(200, "error Deleting KV | n")
+			return fmt.Errorf("delete kv: %s", err)
+		}
+		return nil
+	})
+	c.String(200, "ok")
+}
+
+func (b BoltDBUI) Put(c *gin.Context) {
+
+	if c.PostForm("bucket") == "" || c.PostForm("key") == "" {
+		c.String(200, "no bucket name or key | n")
 	}
 
-	if dbName == "" {
-		usage(appName, version)
-		log.Printf("\nERROR: Missing boltdb name\n")
-		os.Exit(1)
+	b.db.Update(func(tx *bolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists([]byte(c.PostForm("bucket")))
+		if err != nil {
+			c.String(200, "error  creating bucket | n")
+			return fmt.Errorf("create bucket: %s", err)
+		}
+		err = b.Put([]byte(c.PostForm("key")), []byte(c.PostForm("value")))
+		if err != nil {
+
+			c.String(200, "error writing KV | n")
+			return fmt.Errorf("create kv: %s", err)
+		}
+		return nil
+	})
+	c.String(200, "ok")
+}
+
+func (b BoltDBUI) Get(c *gin.Context) {
+	res := []string{"nok", ""}
+	if c.PostForm("bucket") == "" || c.PostForm("key") == "" {
+		res[1] = "no bucket name or key | n"
+		c.JSON(200, res)
 	}
+	b.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(c.PostForm("bucket")))
+		if b != nil {
+			v := b.Get([]byte(c.PostForm("key")))
+			res[0] = "ok"
+			res[1] = string(v)
+			fmt.Printf("Key: %s\n", v)
+		} else {
+			res[1] = "error opening bucket| does it exist? | n"
+		}
+		return nil
+	})
+	c.JSON(200, res)
+}
 
-	fmt.Print(" ")
-	log.Info("starting boltdb-browser..")
+type Result struct {
+	Result string
+	M      map[string]string
+}
 
-	var err error
-	db, err = bolt.Open(dbName, 0600, &bolt.Options{Timeout: 2 * time.Second})
-	boltbrowserweb.Db = db
-
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+func (b BoltDBUI) PrefixScan(c *gin.Context) {
+	res := Result{Result: "nok"}
+	res.M = make(map[string]string)
+	if c.PostForm("bucket") == "" {
+		res.Result = "no bucket name | n"
+		c.JSON(200, res)
 	}
+	count := 0
+	if c.PostForm("key") == "" {
+		b.db.View(func(tx *bolt.Tx) error {
+			// Assume bucket exists and has keys
+			b := tx.Bucket([]byte(c.PostForm("bucket")))
+			if b != nil {
+				c := b.Cursor()
+				for k, v := c.First(); k != nil; k, v = c.Next() {
+					res.M[string(k)] = string(v)
 
-	// OK, we should be ready to define/run web server safely.
-	r := gin.Default()
-	r.GET("/ping", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"message": "pong",
+					if count > 2000 {
+						break
+					}
+					count++
+				}
+				res.Result = "ok"
+			} else {
+				res.Result = "no such bucket available | n"
+			}
+			return nil
+		})
+	} else {
+		b.db.View(func(tx *bolt.Tx) error {
+			// Assume bucket exists and has keys
+			b := tx.Bucket([]byte(c.PostForm("bucket"))).Cursor()
+			if b != nil {
+				prefix := []byte(c.PostForm("key"))
+				for k, v := b.Seek(prefix); bytes.HasPrefix(k, prefix); k, v = b.Next() {
+					res.M[string(k)] = string(v)
+					if count > 2000 {
+						break
+					}
+					count++
+				}
+				res.Result = "ok"
+			} else {
+				res.Result = "no such bucket available | n"
+			}
+			return nil
+		})
+	}
+	c.JSON(200, res)
+
+}
+
+func (b BoltDBUI) Buckets(c *gin.Context) {
+	var res []string
+	b.db.View(func(tx *bolt.Tx) error {
+		return tx.ForEach(func(name []byte, _ *bolt.Bucket) error {
+			b := []string{string(name)}
+			res = append(res, b...)
+			return nil
 		})
 	})
-
-	r.GET("/", boltbrowserweb.Index)
-
-	r.GET("/buckets", boltbrowserweb.Buckets)
-	r.POST("/createBucket", boltbrowserweb.CreateBucket)
-	r.POST("/put", boltbrowserweb.Put)
-	r.POST("/get", boltbrowserweb.Get)
-	r.POST("/deleteKey", boltbrowserweb.DeleteKey)
-	r.POST("/deleteBucket", boltbrowserweb.DeleteBucket)
-	r.POST("/prefixScan", boltbrowserweb.PrefixScan)
-
-	r.Static("/web", staticPath+"/web")
-
-	r.Run(":" + port)
+	c.JSON(200, res)
 }

@@ -1,3 +1,5 @@
+This fork is an attempt to provide embedding static assets as requested in https://github.com/evnix/boltdbweb/issues/9.
+
 # boltdbweb
 A simple web based boltdb GUI Admin panel.
 
@@ -23,8 +25,6 @@ boltdbweb --db-name=<DBfilename>[required] --port=<port>[optional] --static-path
 - `--db-name:` The file name of the DB.
     - NOTE: If 'file.db' does not exist. it will be created as a BoltDB file.
 - `--port:` Port for listening on... (Default: 8080)
-- `--static-path:` If you moved the binary to different folder you can determin the path of the `web` folder. (Default: Same folder where the binary is located.)
-
 
 ##### Example
 ```
@@ -34,8 +34,8 @@ Goto: http://localhost:8089
 
 ##### Screenshots:
 
-![](https://github.com/evnix/boltdbweb/blob/master/screenshots/1.png?raw=true)
+![](https://github.com/brunetto/boltdbweb/blob/master/screenshots/1.png?raw=true)
 
-![](https://github.com/evnix/boltdbweb/blob/master/screenshots/2.png?raw=true)
+![](https://github.com/brunetto/boltdbweb/blob/master/screenshots/2.png?raw=true)
 
-![](https://github.com/evnix/boltdbweb/blob/master/screenshots/3.png?raw=true)
+![](https://github.com/brunetto/boltdbweb/blob/master/screenshots/3.png?raw=true)
