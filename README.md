@@ -28,7 +28,7 @@ boltdbweb --db-name=<DBfilename>[required] --port=<port>[optional] --static-path
 
 ##### Example
 ```
-boltdbweb --db-name=test.db --port=8089 --static-path=/home/user/github/boltdbweb
+boltdbweb --db-name=test.db --port=8089 
 ```
 Goto: http://localhost:8089
 
